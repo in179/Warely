@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>3D Визуализация склада</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #333;
+    color: #eee;
+    font-family: Arial, sans-serif;
+  }
+  #instructions {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    padding: 8px;
+    background: rgba(255,255,255,0.8);
+    color: #000;
+    font-size: 14px;
+    z-index: 10;
+    border-radius: 4px;
+  }
+  #instructions br { line-height: 1.6; }
+  #productLegend {
+    position: fixed;
+    top: 153px;
+    left: 10px;
+    padding: 8px;
+    background: rgba(255,255,255,0.8);
+    color: #000;
+    font-size: 13px;
+    z-index: 10;
+    border-radius: 4px;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  #productLegend table {
+    border-collapse: collapse;
+  }
+  #productLegend td {
+    padding: 2px 4px;
+  }
+  #productLegend tr {
+    cursor: pointer;
+  }
+  #productLegend tr:hover {
+    background: rgba(0,0,0,0.1);
+  }
+  #productSearch {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 6px;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    border: 1px solid #999;
+    font-size: 13px;
+  }
+  /* Легенда обозначений зон (выгрузка/отгрузка), между легендой управления и легендой товаров */
+  #zoneLegend {
+    position: fixed;
+    top: 100px;
+    left: 10px;
+    padding: 8px;
+    background: rgba(255,255,255,0.8);
+    color: #000;
+    font-size: 13px;
+    z-index: 10;
+    border-radius: 4px;
+  }
+  #zoneLegend table {
+    border-collapse: collapse;
+  }
+  #zoneLegend td {
+    padding: 2px 4px;
+  }
+  .zoneSwatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 1px solid #000;
+  }
+  #infoPanel {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    padding: 8px;
+    background: rgba(255,255,255,0.9);
+    color: #000;
+    font-size: 14px;
+    z-index: 10;
+    border-radius: 4px;
+  }
+  #infoPanel th, #infoPanel td {
+    text-align: left;
+    padding: 2px 4px;
+    border-bottom: 1px solid #ccc;
+  }
+  #infoPanel th {
+    background: #eee;
+  }
+  #infoPanel td {
+    background: #fff;
+  }
+  #infoPanel .legend {
+    margin-top: 8px;
+  }
+  #resetBtn {
+    margin-top: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #warehouseInfo select {
+    font-size: 16px;
+    font-family: Arial, sans-serif;
+    border-radius: 4px;
+    border: 1px solid #999;
+    padding: 2px 4px;
+    background: #fff;
+    color: #000;
+  }
+  #refreshBtn {
+    position: fixed;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 18px;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 10;
+    border-radius: 4px;
+    border: 1px solid #999;
+    background: rgba(255,255,255,0.9);
+    color: #000;
+  }
+  #refreshBtn:hover {
+    background: #fff;
+  }
+</style>
+</head>
+<body>
+<div id="instructions">
+  ЛКМ — вращение камеры<br>
+  ПКМ — перемещение камеры<br>
+  Колесо — масштабирование
+</div>
+<div id="zoneLegend">
+  <table>
+    <tr><td><span class="zoneSwatch" style="background: repeating-linear-gradient(45deg, #1f4f8d 0px, #1f4f8d 4px, #1f8d3b 4px, #1f8d3b 8px);"></span></td><td>Выгрузка и Отгрузка</td></tr>
+  </table>
+</div>
+<div id="productLegend">
+  <input type="text" id="productSearch" placeholder="Поиск по названию...">
+  <table id="legendTable"></table>
+</div>
+<div id="warehouseInfo" style="position: fixed; top: 10px; left: 50%; transform: translateX(-50%); padding: 8px; background: rgba(255,255,255,0.8); color: #000; font-size: 16px; z-index: 10; border-radius: 4px;">
+  <select id="warehouseSelect"></select>
+</div>
+<div id="infoPanel">
+  <table>
+    <tr><th>X</th><td id="infoX"></td></tr>
+    <tr><th>Y</th><td id="infoY"></td></tr>
+    <tr><th>Этаж</th><td id="infoFloor"></td></tr>
+    <tr><th>Код</th><td id="infoCode"></td></tr>
+    <tr><th>Товар</th><td id="infoProduct"></td></tr>
+    <tr><th>Количество</th><td id="infoQuantity"></td></tr>
+    <tr><th>Масса ед. (кг)</th><td id="infoUnitMass"></td></tr>
+    <tr><th>Масса товара (кг)</th><td id="infoTotalMass"></td></tr>
+    <tr><th>Вместимость (кг)</th><td id="infoCapacity"></td></tr>
+  </table>
+  <button id="resetBtn">Сбросить выбор</button>
+</div>
+<button id="refreshBtn">Обновить</button>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x444444);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(5, 8, 12);
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.domElement.id = "canvas";
+document.body.appendChild(renderer.domElement);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0, 0);
+controls.update();
+
+renderer.setPixelRatio(window.devicePixelRatio);
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambient);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(20, 30, 10);
+dirLight.castShadow = true;
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 100;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.bias = -0.0005;
+scene.add(dirLight);
+
+const frameMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.6, roughness: 0.4 });
+const shelfMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, roughness: 0.6 });
+const floorMat = new THREE.MeshStandardMaterial({color: 0x666666});
+
+const UNLOAD_ZONE_COLOR = 0x1f4f8d;
+const LOAD_ZONE_COLOR = 0x1f8d3b;
+
+function createDiagonalStripeTexture(colorA, colorB, size = 64, stripeWidth = 25) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(size, size);
+  const cA = new THREE.Color(colorA);
+  const cB = new THREE.Color(colorB);
+  const rA = Math.round(cA.r * 255), gA = Math.round(cA.g * 255), bA = Math.round(cA.b * 255);
+  const rB = Math.round(cB.r * 255), gB = Math.round(cB.g * 255), bB = Math.round(cB.b * 255);
+  const period = stripeWidth * 2;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+      const isA = ((x + y) % period) < stripeWidth;
+      imgData.data[idx] = isA ? rA : rB;
+      imgData.data[idx + 1] = isA ? gA : gB;
+      imgData.data[idx + 2] = isA ? bA : bB;
+      imgData.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.NearestFilter;
+  return texture;
+}
+const zoneStripeTexture = createDiagonalStripeTexture(UNLOAD_ZONE_COLOR, LOAD_ZONE_COLOR, 64, 8);
+zoneStripeTexture.repeat.set(3, 3);
+
+const CELL_PITCH = 1.5;
+const CELL_SIZE = 1.0;
+
+const CELL_MAX_HEIGHT = 1.0;
+const CLEARANCE = 0.2;
+const SLOT_HEIGHT = CELL_MAX_HEIGHT + CLEARANCE;
+const SHELF_THICKNESS = 0.06;
+
+const LEDGE_HEIGHT = CELL_MAX_HEIGHT * 0.15;
+const ledgeMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let selectedCells = [];
+const WHITE = new THREE.Color(0xffffff);
+
+const infoX = document.getElementById('infoX');
+const infoY = document.getElementById('infoY');
+const infoFloor = document.getElementById('infoFloor');
+const infoCode = document.getElementById('infoCode');
+const infoProduct = document.getElementById('infoProduct');
+const infoQuantity = document.getElementById('infoQuantity');
+const infoUnitMass = document.getElementById('infoUnitMass');
+const infoTotalMass = document.getElementById('infoTotalMass');
+const infoCapacity = document.getElementById('infoCapacity');
+
+const legendTable = document.getElementById('legendTable');
+const productSearch = document.getElementById('productSearch');
+const warehouseSelect = document.getElementById('warehouseSelect');
+const refreshBtn = document.getElementById('refreshBtn');
+
+function filterLegend() {
+  const query = productSearch.value.trim().toLowerCase();
+  for (const tr of legendTable.children) {
+    const name = (tr.dataset.product || '').toLowerCase();
+    tr.style.display = (!query || name.includes(query)) ? '' : 'none';
+  }
+}
+productSearch.addEventListener('input', filterLegend);
+
+const warehouseGroup = new THREE.Group();
+scene.add(warehouseGroup);
+
+let warehousesData = [];
+let currentWarehouseIndex = 0;
+let currentJsonUrl = null;
+
+function loadWarehousesFromUrl(url) {
+  return fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error('Ошибка загрузки JSON');
+      return response.json();
+    });
+}
+
+function clearWarehouseGroup() {
+  for (let i = warehouseGroup.children.length - 1; i >= 0; i--) {
+    const obj = warehouseGroup.children[i];
+    warehouseGroup.remove(obj);
+    obj.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+    });
+  }
+}
+
+function getCellProductInfo(cell) {
+  if (cell.Товары && cell.Товары.length > 0) {
+    const t = cell.Товары[0];
+    const qty = t.Остаток || 0;
+    const unitMass = t.Масса || 0;
+    return {
+      name: t.СтруктураТовара,
+      qty: qty,
+      unitMass: unitMass,
+      totalMass: qty * unitMass
+    };
+  }
+  return null;
+}
+
+function updateShadowFrustum(floorWidth, floorHeight) {
+  const shadowMargin = CELL_PITCH * 3;
+  const halfW = floorWidth / 2 + shadowMargin;
+  const halfH = floorHeight / 2 + shadowMargin;
+  dirLight.shadow.camera.left = -halfW;
+  dirLight.shadow.camera.right = halfW;
+  dirLight.shadow.camera.top = halfH;
+  dirLight.shadow.camera.bottom = -halfH;
+  dirLight.shadow.camera.far = Math.max(100, halfW + halfH + 60);
+  dirLight.shadow.camera.updateProjectionMatrix();
+}
+
+function drawWarehouse(data) {
+  clearSelection();
+  clearInfo();
+  clearWarehouseGroup();
+  legendTable.innerHTML = '';
+
+  const width = Math.max(...data.Ячейки.map(c => c.X));
+  const height = Math.max(...data.Ячейки.map(c => c.Y));
+  const offsetX = (width - 1) / 2;
+  const offsetZ = (height - 1) / 2;
+
+  const floorWidth = (width + 1) * CELL_PITCH + CELL_SIZE;
+  const floorHeight = (height + 1) * CELL_PITCH + CELL_SIZE;
+  const floorGeo = new THREE.PlaneGeometry(floorWidth, floorHeight);
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI/2;
+  floor.receiveShadow = true;
+  warehouseGroup.add(floor);
+
+  updateShadowFrustum(floorWidth, floorHeight);
+
+  const productColors = {};
+  let productColorIndex = 0;
+  const GOLDEN_ANGLE = 137.508;
+  function nextProductColor() {
+    const hue = (productColorIndex * GOLDEN_ANGLE) % 360;
+    const saturation = 70 + (productColorIndex % 2) * 15;
+    const lightness = 48 + (productColorIndex % 3) * 12; 
+    productColorIndex++;
+    return new THREE.Color(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+  }
+
+  const racksMap = {};
+  for (const cell of data.Ячейки) {
+    const key = cell.X + '_' + cell.Y;
+    if (!racksMap[key]) {
+      racksMap[key] = { X: cell.X, Y: cell.Y, Ячейки: [] };
+    }
+    racksMap[key].Ячейки.push(cell);
+  }
+  const racks = Object.values(racksMap);
+
+  function isZoneRack(rx, ry) {
+    const r = racksMap[rx + '_' + ry];
+    if (!r || r.Ячейки.length !== 1) return false;
+    const info = getCellProductInfo(r.Ячейки[0]);
+    const t = info ? info.name : null;
+    return t === 'Выгрузка' || t === 'Отгрузка' || t === 'ВыгрузкаОтгрузка' || t === 'ОтгрузкаВыгрузка';
+  }
+
+  function addLedgeSegment(cx, cz, sizeX, sizeZ) {
+    const geo = new THREE.BoxGeometry(sizeX, LEDGE_HEIGHT, sizeZ);
+    const mesh = new THREE.Mesh(geo, ledgeMat);
+    mesh.position.set(cx, LEDGE_HEIGHT / 2, cz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    warehouseGroup.add(mesh);
+  }
+
+  const gridFootprintWidth = (width - 1) * CELL_PITCH + CELL_SIZE;
+  const gridFootprintHeight = (height - 1) * CELL_PITCH + CELL_SIZE;
+  const halfGridW = gridFootprintWidth / 2;
+  const halfGridH = gridFootprintHeight / 2;
+
+  for (let j = 1; j <= height; j++) {
+    const zj = -(j - 1 - offsetZ) * CELL_PITCH;
+    if (!isZoneRack(1, j)) {
+      addLedgeSegment(-halfGridW - CELL_PITCH / 2, zj, CELL_PITCH, CELL_PITCH);
+    }
+    if (!isZoneRack(width, j)) {
+      addLedgeSegment(halfGridW + CELL_PITCH / 2, zj, CELL_PITCH, CELL_PITCH);
+    }
+  }
+  for (let i = 1; i <= width; i++) {
+    const xi = (i - 1 - offsetX) * CELL_PITCH;
+    if (!isZoneRack(i, 1)) {
+      addLedgeSegment(xi, halfGridH + CELL_PITCH / 2, CELL_PITCH, CELL_PITCH);
+    }
+    if (!isZoneRack(i, height)) {
+      addLedgeSegment(xi, -halfGridH - CELL_PITCH / 2, CELL_PITCH, CELL_PITCH);
+    }
+  }
+  const cornerOffsets = [
+    [-halfGridW - CELL_PITCH / 2,  halfGridH + CELL_PITCH / 2],
+    [ halfGridW + CELL_PITCH / 2,  halfGridH + CELL_PITCH / 2],
+    [-halfGridW - CELL_PITCH / 2, -halfGridH - CELL_PITCH / 2],
+    [ halfGridW + CELL_PITCH / 2, -halfGridH - CELL_PITCH / 2],
+  ];
+  for (const [cx, cz] of cornerOffsets) {
+    addLedgeSegment(cx, cz, CELL_PITCH, CELL_PITCH);
+  }
+
+  for (let rack of racks) {
+    const x = (rack.X - 1 - offsetX) * CELL_PITCH;
+    const z = -(rack.Y - 1 - offsetZ) * CELL_PITCH;
+    if (rack.Ячейки.length === 1) {
+      const cell = rack.Ячейки[0];
+      const ZONE_SIZE = CELL_PITCH;
+      let zoneMat = null;
+      const zoneInfo = getCellProductInfo(cell);
+      let productName = zoneInfo ? zoneInfo.name : null;
+      if (cell.Служебная) {
+        productName = "ВыгрузкаОтгрузка";
+      }
+      if (productName === 'Выгрузка') {
+        zoneMat = new THREE.MeshBasicMaterial({ color: UNLOAD_ZONE_COLOR, side: THREE.DoubleSide });
+      } else if (productName === 'Отгрузка') {
+        zoneMat = new THREE.MeshBasicMaterial({ color: LOAD_ZONE_COLOR, side: THREE.DoubleSide });
+      } else if (productName === 'ВыгрузкаОтгрузка' || productName === 'ОтгрузкаВыгрузка') {
+        zoneMat = new THREE.MeshBasicMaterial({ map: zoneStripeTexture, side: THREE.DoubleSide });
+      }
+      if (zoneMat !== null) {
+        const zoneGeo = new THREE.PlaneGeometry(ZONE_SIZE, ZONE_SIZE);
+        const zone = new THREE.Mesh(zoneGeo, zoneMat);
+        zone.rotation.x = -Math.PI/2;
+        zone.position.set(x, 0.01, z);
+        zone.receiveShadow = true;
+        warehouseGroup.add(zone);
+        continue;
+      }
+    }
+    const rackGroup = new THREE.Group();
+    rackGroup.position.set(x, 0, z);
+    const floors = Math.max(...rack.Ячейки.map(c => c.Этаж));
+    if (floors > 0) {
+      const postHeight = floors * SLOT_HEIGHT;
+      const postGeo = new THREE.BoxGeometry(0.1, postHeight, 0.1);
+      const postPositions = [
+        [-0.5, postHeight/2, -0.5],
+        [ 0.5, postHeight/2, -0.5],
+        [-0.5, postHeight/2,  0.5],
+        [ 0.5, postHeight/2,  0.5],
+      ];
+      for (let pos of postPositions) {
+        const post = new THREE.Mesh(postGeo, frameMat);
+        post.position.set(pos[0], pos[1], pos[2]);
+        post.castShadow = true;
+        rackGroup.add(post);
+      }
+      for (let i = 1; i <= floors; i++) {
+        const shelfY = (i - 1) * SLOT_HEIGHT;
+        const shelf = new THREE.Mesh(
+          new THREE.BoxGeometry(1.0, SHELF_THICKNESS, 1.0),
+          shelfMat
+        );
+        shelf.position.set(0, shelfY, 0);
+        shelf.castShadow = true;
+        shelf.receiveShadow = true;
+        rackGroup.add(shelf);
+      }
+    }
+    for (let cell of rack.Ячейки) {
+      const info = getCellProductInfo(cell);
+      if (!info || !info.name || info.qty <= 0) continue;
+      let heightRatio = cell.ВместимостьКг > 0 ? info.totalMass / cell.ВместимостьКг : 1;
+      if (heightRatio > 1) heightRatio = 1;
+      if (heightRatio < 0.2) heightRatio = 0.2;
+      const geometry = new THREE.BoxGeometry(1, heightRatio, 1);
+      if (!productColors[info.name]) {
+        productColors[info.name] = nextProductColor();
+      }
+      const material = new THREE.MeshStandardMaterial({ color: productColors[info.name], metalness: 0.3, roughness: 0.7 });
+      const cube = new THREE.Mesh(geometry, material);
+      const shelfY = (cell.Этаж - 1) * SLOT_HEIGHT;
+      const cellBottom = shelfY + SHELF_THICKNESS/2;
+      cube.position.set(0, cellBottom + heightRatio/2, 0);
+      cube.castShadow = true;
+      cube.receiveShadow = true;
+      cube.userData = {
+        X: rack.X,
+        Y: rack.Y,
+        floor: cell.Этаж,
+        code: cell.Код,
+        product: info.name,
+        quantity: info.qty,
+        unitMass: info.unitMass,
+        totalMass: info.totalMass,
+        capacity: cell.ВместимостьКг,
+        baseColor: material.color.clone()
+      };
+      rackGroup.add(cube);
+    }
+    warehouseGroup.add(rackGroup);
+  }
+  controls.target.set(0, 0, 0);
+  controls.update();
+
+  for (const product in productColors) {
+    const color = productColors[product];
+    const hexColor = '#' + color.getHexString();
+    const tr = document.createElement('tr');
+    const tdColor = document.createElement('td');
+    const swatch = document.createElement('span');
+    swatch.style.display = 'inline-block';
+    swatch.style.width = '14px';
+    swatch.style.height = '14px';
+    swatch.style.background = hexColor;
+    swatch.style.border = '1px solid #000';
+    tdColor.appendChild(swatch);
+    const tdName = document.createElement('td');
+    tdName.textContent = product;
+    tr.appendChild(tdColor);
+    tr.appendChild(tdName);
+    tr.dataset.product = product;
+    tr.addEventListener('click', () => {
+      selectByProduct(product);
+    });
+    legendTable.appendChild(tr);
+  }
+  filterLegend();
+}
+
+function populateWarehouseSelect() {
+  warehouseSelect.innerHTML = '';
+  warehousesData.forEach((wh, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = wh.НазваниеСклада + ' (' + wh.Адрес + ')';
+    warehouseSelect.appendChild(opt);
+  });
+}
+
+function fetchAndRender(preserveIndex) {
+  if (!currentJsonUrl) return;
+  loadWarehousesFromUrl(currentJsonUrl)
+    .then(data => {
+      warehousesData = data;
+      populateWarehouseSelect();
+      const idx = (typeof preserveIndex === 'number' && preserveIndex < warehousesData.length) ? preserveIndex : 0;
+      currentWarehouseIndex = idx;
+      warehouseSelect.value = idx;
+      drawWarehouse(warehousesData[currentWarehouseIndex]);
+    })
+    .catch(err => {
+      console.error(err);
+      alert(err.message);
+    });
+}
+
+function initLoad() {
+  const url = window.prompt('Введите URL для загрузки JSON со списком складов:', currentJsonUrl || '');
+  if (!url) {
+    alert('URL не указан, загрузка отменена.');
+    return;
+  }
+  currentJsonUrl = url;
+  fetchAndRender(0);
+}
+
+warehouseSelect.addEventListener('change', () => {
+  currentWarehouseIndex = parseInt(warehouseSelect.value, 10);
+  drawWarehouse(warehousesData[currentWarehouseIndex]);
+});
+
+refreshBtn.addEventListener('click', () => {
+  if (!currentJsonUrl) {
+    initLoad();
+    return;
+  }
+  fetchAndRender(currentWarehouseIndex);
+});
+
+initLoad();
+
+function updateInfo(cell) {
+  infoX.textContent = cell.userData.X;
+  infoY.textContent = cell.userData.Y;
+  infoFloor.textContent = cell.userData.floor;
+  infoCode.textContent = cell.userData.code;
+  infoProduct.textContent = cell.userData.product;
+  infoQuantity.textContent = cell.userData.quantity;
+  infoUnitMass.textContent = cell.userData.unitMass;
+  infoTotalMass.textContent = cell.userData.totalMass;
+  infoCapacity.textContent = cell.userData.capacity;
+}
+function clearInfo() {
+  infoX.textContent = '';
+  infoY.textContent = '';
+  infoFloor.textContent = '';
+  infoCode.textContent = '';
+  infoProduct.textContent = '';
+  infoQuantity.textContent = '';
+  infoUnitMass.textContent = '';
+  infoTotalMass.textContent = '';
+  infoCapacity.textContent = '';
+}
+
+function highlightObject(obj) {
+  const base = obj.userData.baseColor;
+  if (!base) return;
+  obj.material.color.copy(base.clone().lerp(WHITE, 0.75));
+}
+function unhighlightObject(obj) {
+  const base = obj.userData.baseColor;
+  if (!base) return;
+  obj.material.color.copy(base);
+}
+
+function clearSelection() {
+  for (let obj of selectedCells) {
+    unhighlightObject(obj);
+  }
+  selectedCells = [];
+}
+
+function selectSingle(object) {
+  clearSelection();
+  selectedCells = [object];
+  highlightObject(object);
+  updateInfo(object);
+}
+
+function selectByProduct(product, infoObject) {
+  clearSelection();
+  scene.traverse(obj => {
+    if (obj.userData && obj.userData.product === product) {
+      selectedCells.push(obj);
+      highlightObject(obj);
+    }
+  });
+  if (infoObject) {
+    updateInfo(infoObject);
+  } else if (selectedCells.length > 0) {
+    updateInfo(selectedCells[0]);
+  }
+}
+
+function getIntersectedCell(event) {
+  const infoPanel = document.getElementById('infoPanel');
+  const instructions = document.getElementById('instructions');
+  const productLegend = document.getElementById('productLegend');
+  const zoneLegend = document.getElementById('zoneLegend');
+  const warehouseInfo = document.getElementById('warehouseInfo');
+  if (infoPanel.contains(event.target) || instructions.contains(event.target) ||
+      (productLegend && productLegend.contains(event.target)) ||
+      (zoneLegend && zoneLegend.contains(event.target)) ||
+      (warehouseInfo && warehouseInfo.contains(event.target)) ||
+      event.target === refreshBtn) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(scene.children, true);
+  if (intersects.length > 0) {
+    const object = intersects[0].object;
+    if (object.userData && object.userData.hasOwnProperty('code')) {
+      return object;
+    }
+  }
+  return null;
+}
+
+function onClick(event) {
+  const object = getIntersectedCell(event);
+  if (object) {
+    selectSingle(object);
+  }
+}
+window.addEventListener('click', onClick);
+
+function onDblClick(event) {
+  const object = getIntersectedCell(event);
+  if (object) {
+    selectByProduct(object.userData.product, object);
+  }
+}
+window.addEventListener('dblclick', onDblClick);
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  clearSelection();
+  clearInfo();
+});
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && selectedCells.length > 0) {
+    clearSelection();
+    clearInfo();
+  }
+});
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
